@@ -1,0 +1,19 @@
+name: Phuket Flood Check
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # ทุก 15 นาที
+  workflow_dispatch:  # กดรันมือได้ด้วย
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python phuket_cloud.py
+        env:
+          CHANNEL_TOKEN: ${{ secrets.CHANNEL_TOKEN }}
