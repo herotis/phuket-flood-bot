@@ -17,3 +17,4 @@ jobs:
       - run: python phuket_cloud.py
         env:
           CHANNEL_TOKEN: ${{ secrets.CHANNEL_TOKEN }}
+          GROUP_ID: ${{ secrets.GROUP_ID }}
