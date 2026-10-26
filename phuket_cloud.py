@@ -3,19 +3,19 @@ import os
 from datetime import datetime, timedelta, timezone
 
 CHANNEL_TOKEN = os.environ.get("CHANNEL_TOKEN", "").strip().replace("\ufeff","")
+GROUP_ID = os.environ.get("GROUP_ID", "").strip()  # C639ec5a7366a2410ebb506d68a6b8c2a
 
 if not CHANNEL_TOKEN or len(CHANNEL_TOKEN) < 100:
     print("❌ ไม่เจอ CHANNEL_TOKEN")
     exit(1)
 
 print(f"Token length: {len(CHANNEL_TOKEN)} chars")
+if GROUP_ID:
+    print(f"Group ID: {GROUP_ID}")
 
-# เวลาไทย = UTC + 7
 THAI_TZ = timezone(timedelta(hours=7))
 now_utc = datetime.now(timezone.utc)
 now_thai = now_utc.astimezone(THAI_TZ)
-
-print(f"UTC: {now_utc.strftime('%H:%M %d/%m')} | ไทย: {now_thai.strftime('%H:%M %d/%m')}")
 
 PHUKET_ZONES = {
     "เมืองภูเก็ต ถ.บางกอก/เยาวราช": (7.8845, 98.3923),
@@ -27,13 +27,30 @@ PHUKET_ZONES = {
     "ถลาง ถ.เทพกระษัตรี": (8.0300, 98.3600),
 }
 
-def send_line(message):
-    url = "https://api.line.me/v2/bot/message/broadcast"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {CHANNEL_TOKEN}"}
-    data = {"messages": [{"type": "text", "text": message}]}
-    r = requests.post(url, headers=headers, json=data, timeout=15)
-    print(f"LINE Status: {r.status_code}")
-    return r.status_code == 200
+def send_line(message, to_group=None):
+    # ถ้ามี group_id ให้ส่งเข้ากลุ่มด้วย push
+    targets = []
+    if to_group:
+        targets.append(("push to group", to_group))
+    else:
+        # ถ้าไม่มี group ก็ broadcast ให้เพื่อนทุกคน (แบบเดิม)
+        targets.append(("broadcast", None))
+
+    for mode, target in targets:
+        try:
+            if mode == "push to group":
+                url = "https://api.line.me/v2/bot/message/push"
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {CHANNEL_TOKEN}"}
+                data = {"to": target, "messages": [{"type": "text", "text": message}]}
+            else:
+                url = "https://api.line.me/v2/bot/message/broadcast"
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {CHANNEL_TOKEN}"}
+                data = {"messages": [{"type": "text", "text": message}]}
+            
+            r = requests.post(url, headers=headers, json=data, timeout=15)
+            print(f"LINE {mode}: {r.status_code} - {r.text[:200]}")
+        except Exception as e:
+            print(f"LINE {mode} error: {e}")
 
 def check_rain(lat, lon):
     try:
@@ -47,7 +64,6 @@ def check_rain(lat, lon):
         return 0,0
 
 is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-
 alerts = []
 summary_lines = []
 for zone, (lat, lon) in PHUKET_ZONES.items():
@@ -61,14 +77,17 @@ for zone, (lat, lon) in PHUKET_ZONES.items():
 
 time_str_thai = now_thai.strftime('%H:%M น. %d/%m/%y')
 
+# ส่งไปที่ไหน: ถ้ามี GROUP_ID ให้ส่งเข้ากลุ่มนั้นเป็นหลัก
+send_target = GROUP_ID if GROUP_ID else None
+
 if alerts:
     msg = f"🚕 เตือนน้ำท่วมภูเก็ต (คลาวด์)\n" + "\n".join(alerts) + f"\nเวลา {time_str_thai}"
-    send_line(msg)
+    send_line(msg, to_group=send_target)
 else:
     print("ฝนปกติ ไม่ต้องเตือน")
     if is_manual:
         msg = f"✅ ระบบคลาวด์ภูเก็ตทำงานปกติ\nเวลา {time_str_thai} (เวลาไทย)\nฝนปกติทุกจุด:\n" + "\n".join(summary_lines[:6]) + "\n(จะเตือนอัตโนมัติเมื่อฝนหนักเกิน 40มม./3ชม.)"
-        send_line(msg)
-    elif now_thai.hour == 7:  # 07:00 เวลาไทย ส่งสรุปวันละครั้ง
+        send_line(msg, to_group=send_target)
+    elif now_thai.hour == 7:
         msg = f"✅ ระบบคลาวด์ยังทำงานปกติ {time_str_thai} - ฝนภูเก็ตปกติทุกจุด"
-        send_line(msg)
+        send_line(msg, to_group=send_target)
