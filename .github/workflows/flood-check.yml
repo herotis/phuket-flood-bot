@@ -1,9 +1,9 @@
 name: Phuket Flood Check
 
-on:
+"on":
   schedule:
-    - cron: '*/15 * * * *'  # ทุก 15 นาที
-  workflow_dispatch:  # กดรันมือได้ด้วย
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 jobs:
   check:
