@@ -1,6 +1,6 @@
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 CHANNEL_TOKEN = os.environ.get("CHANNEL_TOKEN", "").strip().replace("\ufeff","")
 
@@ -9,6 +9,13 @@ if not CHANNEL_TOKEN or len(CHANNEL_TOKEN) < 100:
     exit(1)
 
 print(f"Token length: {len(CHANNEL_TOKEN)} chars")
+
+# เวลาไทย = UTC + 7
+THAI_TZ = timezone(timedelta(hours=7))
+now_utc = datetime.now(timezone.utc)
+now_thai = now_utc.astimezone(THAI_TZ)
+
+print(f"UTC: {now_utc.strftime('%H:%M %d/%m')} | ไทย: {now_thai.strftime('%H:%M %d/%m')}")
 
 PHUKET_ZONES = {
     "เมืองภูเก็ต ถ.บางกอก/เยาวราช": (7.8845, 98.3923),
@@ -25,7 +32,7 @@ def send_line(message):
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {CHANNEL_TOKEN}"}
     data = {"messages": [{"type": "text", "text": message}]}
     r = requests.post(url, headers=headers, json=data, timeout=15)
-    print(f"LINE Status: {r.status_code} - {r.text[:300]}")
+    print(f"LINE Status: {r.status_code}")
     return r.status_code == 200
 
 def check_rain(lat, lon):
@@ -39,8 +46,6 @@ def check_rain(lat, lon):
         print(f"check error {e}")
         return 0,0
 
-now = datetime.now()
-print(f"เริ่มเช็ค {now.strftime('%H:%M %d/%m/%Y')} Asia/Bangkok")
 is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
 
 alerts = []
@@ -54,15 +59,16 @@ for zone, (lat, lon) in PHUKET_ZONES.items():
     elif rToday >= 80:
         alerts.append(f"⚠️ {zone} ฝนสะสม {rToday:.0f}มม. เฝ้าระวัง")
 
+time_str_thai = now_thai.strftime('%H:%M น. %d/%m/%y')
+
 if alerts:
-    msg = "🚕 เตือนน้ำท่วมภูเก็ต (ระบบคลาวด์)\n" + "\n".join(alerts) + f"\nเวลา {now.strftime('%H:%M %d/%m')}"
+    msg = f"🚕 เตือนน้ำท่วมภูเก็ต (คลาวด์)\n" + "\n".join(alerts) + f"\nเวลา {time_str_thai}"
     send_line(msg)
 else:
-    print("ฝนปกติ ไม่ต้องเตือน (แต่ถ้ากด Run มือจะส่งสรุปให้ดู)")
-    # ถ้ากด Run ด้วยมือ ให้ส่งสรุปฝนปกติไปด้วย เพื่อให้รู้ว่าระบบทำงาน
+    print("ฝนปกติ ไม่ต้องเตือน")
     if is_manual:
-        msg = f"✅ ระบบคลาวด์ภูเก็ตทำงานปกติ\nเวลา {now.strftime('%H:%M %d/%m')}\nฝนปกติทุกจุด:\n" + "\n".join(summary_lines[:6]) + "\n(จะเตือนอัตโนมัติเมื่อฝนหนักเกิน 40มม./3ชม.)"
+        msg = f"✅ ระบบคลาวด์ภูเก็ตทำงานปกติ\nเวลา {time_str_thai} (เวลาไทย)\nฝนปกติทุกจุด:\n" + "\n".join(summary_lines[:6]) + "\n(จะเตือนอัตโนมัติเมื่อฝนหนักเกิน 40มม./3ชม.)"
         send_line(msg)
-    elif now.hour == 0:  # 07:00 Bangkok = 00:00 UTC ส่งสรุปวันละครั้ง
-        msg = f"✅ ระบบคลาวด์ยังทำงานปกติ {now.strftime('%d/%m %H:%M')} - ฝนภูเก็ตปกติทุกจุด"
+    elif now_thai.hour == 7:  # 07:00 เวลาไทย ส่งสรุปวันละครั้ง
+        msg = f"✅ ระบบคลาวด์ยังทำงานปกติ {time_str_thai} - ฝนภูเก็ตปกติทุกจุด"
         send_line(msg)
